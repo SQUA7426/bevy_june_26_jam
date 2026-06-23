@@ -8,6 +8,8 @@ pub enum GameState {
     Splash,
     Menu,
     Game,
+    InGame,
+    Pause,
 }
 
 #[derive(Component, Resource, Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,6 +38,20 @@ fn create_screen_node() -> Node {
     }
 }
 
+fn create_btn(w: f32, h: f32, m: f32) -> Node {
+    Node {
+        width: px(w),
+        height: px(h),
+        margin: UiRect::all(px(m)),
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        ..default()
+    }
+}
+
+#[derive(Resource)]
+struct INGAME(bool);
+
 #[derive(Debug)]
 pub struct GameStatePlugin;
 
@@ -43,9 +59,10 @@ impl Plugin for GameStatePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DisplayQuality::Medium)
             .insert_resource(Volume(7))
+            .insert_resource(INGAME(false))
             .init_state::<GameState>()
-            .add_systems(Startup, setup)
-            .add_plugins((splash::splash_plugin, menu::menu_plugin, game::game_plugin));
+            .add_plugins((splash::splash_plugin, menu::menu_plugin, game::game_plugin))
+            .add_systems(Startup, setup);
     }
 }
 
@@ -163,7 +180,7 @@ mod game {
                         },
                         children![
                             game_screen(format!("quality: {:?}", *display_quality), BLUE.into()),
-                            game_screen("-".to_string(), MAIN_TEXT_COLOR),
+                            game_screen(" - ".to_string(), MAIN_TEXT_COLOR),
                             game_screen(format!("volume: {:?}", *volume), LIME.into()),
                         ]
                     ),
@@ -185,6 +202,7 @@ mod game {
 }
 
 mod menu {
+
     use bevy::{
         app::AppExit,
         color::palettes::css::BLUE_VIOLET,
@@ -194,8 +212,11 @@ mod menu {
 
     use super::MAIN_TEXT_COLOR;
     use crate::components::game_menu::{
-        DisplayQuality, GameState, Setting, Volume, create_screen_node,
+        DisplayQuality, GameState, INGAME, Setting, Volume, create_screen_node, create_btn
     };
+
+    #[derive(Resource, Debug)]
+    pub struct MenuTimer(Timer);
 
     pub fn menu_plugin(app: &mut App) {
         app.init_state::<MenuState>()
@@ -218,7 +239,13 @@ mod menu {
             .add_systems(
                 Update,
                 (menu_action, button_system).run_if(in_state(GameState::Menu)),
-            );
+            )
+            .add_systems(
+                Update,
+                update_game_into_ingame.run_if(in_state(GameState::Game)),
+            )
+            .add_systems(OnEnter(GameState::Pause), pause_menu_setup)
+            .add_systems(Update, (menu_action, button_system).run_if(in_state(GameState::Pause)));
     }
 
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, States)]
@@ -233,20 +260,22 @@ mod menu {
 
     create_components!(
         OnMainMenuScreen,
+        OnPauseScreen,
         OnSettingsMenuScreen,
         OnDisplaySettingsMenuScreen,
         OnSoundSettingsMenuScreen,
         SelectedOption
     );
 
-    const NORMAL_BTN: Color = Color::srgb(0.15, 0.15, 0.45);
+    pub const NORMAL_BTN: Color = Color::srgb(0.15, 0.15, 0.45);
     const HOVERED_BTN: Color = Color::srgb(0.25, 0.25, 0.55);
     const HOVERED_PRESSED_BTN: Color = Color::srgb(0.25, 0.65, 0.55);
     const PRESSED_BTN: Color = Color::srgb(0.35, 0.75, 0.65);
 
     #[derive(Component)]
-    enum MenuButtonAction {
+    pub enum MenuButtonAction {
         Play,
+        Continue,
         Settings,
         SettingsDisplay,
         SettingsSound,
@@ -292,19 +321,10 @@ mod menu {
         }
     }
 
-    fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
-        menu_state.set(MenuState::Main);
-    }
+    fn menu_setup(mut cmds: Commands, mut menu_state: ResMut<NextState<MenuState>>) {
+        cmds.insert_resource(MenuTimer(Timer::from_seconds(2., TimerMode::Once)));
 
-    fn create_btn(w: f32, h: f32, m: f32) -> Node {
-        Node {
-            width: px(w),
-            height: px(h),
-            margin: UiRect::all(px(m)),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        }
+        menu_state.set(MenuState::Main);
     }
 
     use bevy::ecs::spawn::SpawnRelatedBundle;
@@ -357,8 +377,9 @@ mod menu {
             )
         }
 
+        // MAIN
         cmds.spawn((
-            DespawnOnExit(MenuState::Main),
+            DespawnOnExit(GameState::Menu),
             create_screen_node(),
             OnMainMenuScreen,
             children![(
@@ -567,6 +588,7 @@ mod menu {
     }
 
     fn menu_action(
+        mut cmds: Commands,
         interaction_query: Query<
             (&Interaction, &MenuButtonAction),
             (Changed<Interaction>, With<Button>),
@@ -584,7 +606,10 @@ mod menu {
                     MenuButtonAction::Play => {
                         game_state.set(GameState::Game);
                         menu_state.set(MenuState::Disabled);
+                        cmds.remove_resource::<INGAME>();
+                        cmds.insert_resource(INGAME(true));
                     }
+                    MenuButtonAction::Continue => game_state.set(GameState::InGame),
                     MenuButtonAction::Settings => menu_state.set(MenuState::Settings),
                     MenuButtonAction::SettingsDisplay => {
                         menu_state.set(MenuState::SettingsDisplay);
@@ -599,5 +624,115 @@ mod menu {
                 }
             }
         }
+    }
+
+    fn update_game_into_ingame(
+        mut timer: ResMut<MenuTimer>,
+        time: Res<Time>,
+        mut game_state: ResMut<NextState<GameState>>,
+    ) {
+        if timer.0.tick(time.delta()).just_finished() {
+            game_state.set(GameState::InGame);
+        }
+    }
+
+    // use super::{MAIN_TEXT_COLOR};
+    // use crate::components::game_menu::menu::{MenuButtonAction, NORMAL_BTN};
+    // use crate::components::game_menu::{create_btn, create_screen_node};
+    // use crate::GameState;
+    // use bevy::{color::palettes::css::BLUE_VIOLET, ecs::spawn::SpawnRelatedBundle, prelude::*};
+    //
+
+    fn pause_menu_setup(mut cmds: Commands, asset_server: Res<AssetServer>) {
+        fn btn_icon_node() -> Node {
+            Node {
+                width: px(30),
+                position_type: PositionType::Absolute,
+                left: px(10),
+                ..default()
+            }
+        }
+
+        fn btn_text_font(text: String) -> (Text, TextFont, TextColor) {
+            (
+                Text::new(text),
+                TextFont {
+                    font_size: 33.,
+                    ..default()
+                },
+                TextColor(MAIN_TEXT_COLOR),
+            )
+        }
+
+        let right_icon: Handle<Image> = asset_server.load("img/right.png");
+        let gear_icon: Handle<Image> = asset_server.load("img/gear.png");
+        let exit_icon: Handle<Image> = asset_server.load("img/exit.png");
+
+        fn create_pause_bt(
+            action: MenuButtonAction,
+            icon: Handle<Image>,
+            text: String,
+        ) -> (
+            Button,
+            Node,
+            BackgroundColor,
+            MenuButtonAction,
+            SpawnRelatedBundle<
+                ChildOf,
+                (Spawn<(ImageNode, Node)>, Spawn<(Text, TextFont, TextColor)>),
+            >,
+        ) {
+            (
+                Button,
+                create_btn(300., 65., 25.),
+                BackgroundColor(NORMAL_BTN),
+                action,
+                children![(ImageNode::new(icon), btn_icon_node()), btn_text_font(text)],
+            )
+        }
+
+        // PAUSE
+        cmds.spawn((
+            DespawnOnExit(GameState::Pause),
+            create_screen_node(),
+            OnPauseScreen,
+            children![(
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BackgroundColor(BLUE_VIOLET.into()),
+                children![
+                    (
+                        Text::new("GAME PAUSED"),
+                        TextFont {
+                            font_size: 66.,
+                            ..default()
+                        },
+                        TextColor(MAIN_TEXT_COLOR),
+                        Node {
+                            margin: UiRect::all(px(50)),
+                            ..default()
+                        },
+                    ),
+                    create_pause_bt(
+                        MenuButtonAction::Continue,
+                        right_icon.clone(),
+                        "Continue".into(),
+                    ),
+                    create_pause_bt(
+                        MenuButtonAction::Settings,
+                        gear_icon.clone(),
+                        "Settings".into(),
+                    ),
+                    create_pause_bt(
+                        MenuButtonAction::BackToMainMenu,
+                        exit_icon.clone(),
+                        "Back".into(),
+                    ),
+                ]
+            )],
+        ));
     }
 }
