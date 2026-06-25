@@ -50,7 +50,7 @@ fn create_btn(w: f32, h: f32, m: f32) -> Node {
 }
 
 #[derive(Resource)]
-struct INGAME(bool);
+pub struct INGAME(pub bool);
 
 #[derive(Debug)]
 pub struct GameStatePlugin;
@@ -251,6 +251,7 @@ mod menu {
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, States)]
     enum MenuState {
         Main,
+        Paused,
         Settings,
         SettingsDisplay,
         SettingsSound,
@@ -321,10 +322,9 @@ mod menu {
         }
     }
 
-    fn menu_setup(mut cmds: Commands, mut menu_state: ResMut<NextState<MenuState>>) {
+    fn menu_setup(mut cmds: Commands, mut menu_state: ResMut<NextState<MenuState>>, is_in_game: Res<INGAME>) {
         cmds.insert_resource(MenuTimer(Timer::from_seconds(2., TimerMode::Once)));
-
-        menu_state.set(MenuState::Main);
+        menu_state.set(if !is_in_game.0 { MenuState::Main } else { MenuState::Paused });
     }
 
     use bevy::ecs::spawn::SpawnRelatedBundle;

@@ -1,4 +1,5 @@
-use crate::{GameState, Player};
+use crate::GameState;
+use crate::components::game_menu::INGAME;
 use bevy::{
     image::{ImageArrayLayout, ImageLoaderSettings},
     prelude::*,
@@ -11,7 +12,7 @@ pub struct TilemapPlugin;
 impl Plugin for TilemapPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::InGame), setup)
-            .add_systems(Update, pause_InGame);
+            .add_systems(Update, pause_in_game.run_if(in_state(GameState::InGame)));
     }
 }
 
@@ -43,8 +44,12 @@ fn setup(mut cmds: Commands, assets: Res<AssetServer>) {
     ));
 }
 
-fn pause_InGame(mut game_state: ResMut<NextState<GameState>>, input: Res<ButtonInput<KeyCode>>) {
-    if input.pressed(KeyCode::Escape) {
+fn pause_in_game(
+    mut game_state: ResMut<NextState<GameState>>,
+    input: Res<ButtonInput<KeyCode>>,
+    is_in_game: Res<INGAME>,
+) {
+    if input.pressed(KeyCode::Escape) && is_in_game.0 {
         game_state.set(GameState::Pause);
     }
 }

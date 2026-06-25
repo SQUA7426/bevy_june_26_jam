@@ -1,6 +1,9 @@
 use bevy::{
     color::palettes::basic::PURPLE,
-    prelude::{ops::powf, *},
+    prelude::{
+        ops::{powf},
+        *,
+    },
 };
 
 use crate::GameState;
@@ -19,20 +22,21 @@ struct PlayerSpeed {
 pub struct Player {
     name: String,
     speed: f32,
-    x: f32,
-    y: f32,
+    pub pos: Vec<Vec2>,
 }
 
 impl Player {
-    pub fn new(init_name: String, init_speed: f32, x_pos: f32, y_pos: f32) -> Self {
+    pub fn new(init_name: String, init_speed: f32) -> Self {
         Self {
             name: init_name,
             speed: init_speed,
-            x: x_pos,
-            y: y_pos,
+            pos: Vec::new(),
         }
     }
 }
+
+#[derive(Resource)]
+pub struct PlayerTimer(Timer);
 
 #[derive(Debug)]
 pub struct PlayerPlugin;
@@ -40,7 +44,10 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::InGame), setup)
-            .add_systems(FixedUpdate, (control_player, update_cam, update_cam_zoom));
+            .add_systems(
+                FixedUpdate,
+                (control_player, add_points, update_cam, update_cam_zoom),
+            );
     }
 }
 
@@ -48,12 +55,11 @@ fn setup(
     mut cmds: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    // window: Single<&Window>,
-    mut game_state: ResMut<NextState<GameState>>,
 ) {
-    // let window_size = window.resolution.physical_size().as_vec2();
 
-    let player = Player::new("Tom".into(), 30., 0., 0.);
+    cmds.insert_resource(PlayerTimer(Timer::from_seconds(0.01, TimerMode::Repeating)));
+
+    let player = Player::new("Tom".into(), 300.);
 
     cmds.spawn((
         Mesh2d(meshes.add(Rectangle::new(8., 8.))),
@@ -64,8 +70,8 @@ fn setup(
     // TEXT
     cmds.spawn((
         Text::new(
-            "Bla, bla, bla...\n\
-        USE WASD to move PLAYER.\n\
+            "USE WASD to move PLAYER.\n\
+            use R to Reset Player\n\
         USE Period/Comma to ZoomIn/ZoomOut.",
         ),
         Node {
@@ -83,14 +89,12 @@ fn setup(
 }
 
 fn control_player(
-    mut player: Single<&mut Transform, With<Player>>,
+    player_query: Single<(&mut Player, &mut Transform)>,
     speed: Res<PlayerSpeed>,
     input: Res<ButtonInput<KeyCode>>,
-    // window: Single<&Window>,
     time: Res<Time<Fixed>>,
 ) {
-    // let window_size = window.size();
-    // println!("Window size: x: {} , y: {}", window_size.x, window_size.y);
+    let (mut player, mut transform) = player_query.into_inner();
 
     let player_speed: f32 = speed.value;
 
@@ -112,8 +116,33 @@ fn control_player(
         direction.x += 1.;
     }
 
+    if input.pressed(KeyCode::KeyR) {
+        player.pos.clear();
+        transform.translation.x = 0.;
+        transform.translation.y = 0.;
+        return;
+    }
+
     let movement_delta = direction.normalize_or_zero() * player_speed * time.delta_secs();
-    player.translation += movement_delta.extend(0.);
+    transform.translation += movement_delta.extend(0.);
+}
+
+fn add_points(
+    player_query: Single<(&mut Player, &mut Transform)>,
+    mut timer: ResMut<PlayerTimer>,
+    time: Res<Time>,
+) {
+    let (mut player, transform) = player_query.into_inner();
+
+    if timer.0.tick(time.delta()).just_finished() {
+        player
+            .pos
+            .push(Vec2::new(transform.translation.x, transform.translation.y));
+
+        if player.pos.len() > 50 {
+            player.pos.remove(0);
+        }
+    }
 }
 
 fn update_cam(
