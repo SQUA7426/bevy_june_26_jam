@@ -8,7 +8,7 @@ use crate::components::cosmic_components::cosmic_type::CosmicType;
 // ENTITY
 #[allow(dead_code)]
 #[derive(Component, Clone, Debug)]
-struct CosmicEntity {
+pub struct CosmicEntity {
     pub pos: Vec2,
     pub radius: f32,
     pub cosmic_essences: Vec<CosmicEssence>,
@@ -170,7 +170,9 @@ fn calc_circle(
         cmds.insert_resource(CosmicEssence { value: ce - 20. });
         println!(
             "CosmicEntity created — pos: {}, radius: {:.1}, rate: {:.2}",
-            centroid, avg_radius, produce_rate(avg_radius)
+            centroid,
+            avg_radius,
+            produce_rate(avg_radius)
         );
     }
 }

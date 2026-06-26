@@ -1,6 +1,8 @@
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*, window::PresentMode};
 
-use bevy_june_26_jam::{DebugTextPlugin, GameStatePlugin, PlayerPlugin, TilemapPlugin, CosmicPlugin};
+use bevy_june_26_jam::{
+    CosmicPlugin, DebugTextPlugin, GameStatePlugin, MousePlugin, PlayerPlugin, TilemapPlugin,
+};
 
 fn main() {
     App::new()
@@ -18,6 +20,7 @@ fn main() {
         ))
         .add_plugins((
             GameStatePlugin,
+            MousePlugin,
             PlayerPlugin,
             TilemapPlugin,
             DebugTextPlugin,
